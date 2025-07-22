@@ -2,8 +2,7 @@
 
 import AnimatedCubeIcon from "./components/AnimatedCubeIcon";
 
-import { useState, useEffect } from "react";
-import Image from "next/image";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import CaseForm from "./components/CaseForm";
 import ThemeToggle from "./components/ThemeToggle";
@@ -44,6 +43,8 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(true); // Start with true to show loading while checking auth
   const [showQueueManager, setShowQueueManager] = useState(false);
   const [jobs, setJobs] = useState<any[]>([]);
+  // Local cache to persist jobs between polls (cleared on fresh site visit)
+  const jobCacheRef = useRef<any[]>([]);
   const [showMileageWarning, setShowMileageWarning] = useState(false);
   const [isExecutionExpanded, setIsExecutionExpanded] = useState(true);
   const [mileageData, setMileageData] = useState<{
@@ -81,16 +82,60 @@ export default function Home() {
     }
   };
 
+  // Clear job cache on fresh site visit
+  useEffect(() => {
+    // Clear cache when component mounts (fresh site visit)
+    jobCacheRef.current = [];
+    console.log('Job cache cleared on fresh site visit');
+  }, []); // Empty dependency array means this runs once on mount
+
   // Listen for job queue updates via polling
   useEffect(() => {
+    // Helper function to merge jobs with cache, maintaining completed/failed jobs briefly
+    const mergeJobsWithCache = (newJobs: any[], cachedJobs: any[]): any[] => {
+      const mergedJobs = [...cachedJobs];
+      
+      // Add or update jobs from the new response
+      newJobs.forEach(newJob => {
+        const existingIndex = mergedJobs.findIndex(job => job.id === newJob.id);
+        if (existingIndex >= 0) {
+          // Update existing job
+          mergedJobs[existingIndex] = { ...mergedJobs[existingIndex], ...newJob };
+        } else {
+          // Add new job
+          mergedJobs.push(newJob);
+        }
+      });
+      
+      // Remove jobs that are completed/failed and older than 30 seconds
+      const now = Date.now();
+      const filteredJobs = mergedJobs.filter(job => {
+        if (job.status === 'completed' || job.status === 'failed') {
+          // Keep completed/failed jobs for 30 seconds to show in UI
+          const jobEndTime = job.endTime ? new Date(job.endTime).getTime() : now;
+          return (now - jobEndTime) < 30000; // 30 seconds
+        }
+        return true; // Keep running, queued, or other status jobs
+      });
+      
+      return filteredJobs.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    };
+
     const pollJobQueue = async () => {
       try {
         const response = await makeAuthenticatedRequest('/api/queue', {}, user);
         if (response.ok) {
           const data = await response.json();
-          const jobs = data.jobs || []; // Extract jobs array from response
-          setJobs(jobs); // Update jobs state for count badge
-          const runningJob = jobs.find((job: any) => job.status === 'running');
+          const newJobs = data.jobs || []; // Extract jobs array from response
+          
+          // Merge with cached jobs instead of replacing
+          const mergedJobs = mergeJobsWithCache(newJobs, jobCacheRef.current);
+          
+          // Update both cache and state
+          jobCacheRef.current = mergedJobs;
+          setJobs(mergedJobs); // Update jobs state for count badge
+          
+          const runningJob = mergedJobs.find((job: any) => job.status === 'running');
           
           if (runningJob) {
             // If there's a running job and we're not already executing, sync the state
@@ -136,7 +181,7 @@ export default function Home() {
             }
           } else if (isExecuting) {
             // If no running job but we think we're executing, check if the last job completed/failed
-            const lastJob = jobs.length > 0 ? jobs[jobs.length - 1] : null;
+            const lastJob = mergedJobs.length > 0 ? mergedJobs[mergedJobs.length - 1] : null;
             if (lastJob && (lastJob.status === 'completed' || lastJob.status === 'failed')) {
               // Only stop executing if the session matches or if no sessionId is set
               const lastJobSessionId = lastJob.sessionId;
@@ -237,6 +282,16 @@ export default function Home() {
       const result = await response.json();
 
       if (response.ok && result.success) {
+        // Add the new job to local cache immediately for instant UI update
+        const newJob = {
+          ...result.job,
+          status: 'queued',
+          createdAt: new Date().toISOString()
+        };
+        
+        jobCacheRef.current = [newJob, ...jobCacheRef.current];
+        setJobs([newJob, ...jobs]);
+        
         // Check if this is the first job (will start immediately)
         const queueResponse = await makeAuthenticatedRequest("/api/queue", {}, user);
         const queueData = await queueResponse.json();
@@ -323,6 +378,25 @@ export default function Home() {
           </span>
         </div>
         <div className="flex items-center gap-4">
+                    {user && subscriptionStatus && hasActiveSubscription(subscriptionStatus) && (
+            <button
+              onClick={() => setShowQueueManager(true)}
+              className={`relative px-3 py-2 text-sm rounded-md transition-colors font-medium ${
+                jobs.filter(job => job.status === 'running' || job.status === 'pending').length >= 3
+                  ? 'bg-warning text-warning-foreground'
+                  : 'bg-background-secondary text-text-secondary hover:bg-secondary/80'
+              }`}
+              title={jobs.filter(job => job.status === 'running' || job.status === 'pending').length >= 3 ? 'Queue is full (3/3 active jobs)' : 'View job queue'}
+            >
+              Queue
+              {jobs.length > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full min-w-[20px] h-5 flex items-center justify-center px-1">
+                  {jobs.filter(job => job.status === 'running' || job.status === 'pending').length}
+                </span>
+              )}
+            </button>
+          )}
+
           <ThemeToggle />
           {user && (
             <div className="flex items-center gap-3">
@@ -548,7 +622,7 @@ export default function Home() {
           </div>
         ) : (
           /* Content Area with Tabs - displayed when user is logged in with active subscription */
-          <div className={`flex-1 transition-all duration-300 ease-out ${isExecuting && isExecutionExpanded ? 'pr-[336px]' : ''}`}>
+          <div className={`flex-1 transition-all duration-300 ease-out ${isExecuting && isExecutionExpanded ? 'md:pr-[336px]' : ''}`}>
             {/* Tab Navigation */}
             <div className="mb-4">
               <div className="border-b border-gray-200 dark:border-gray-700">
@@ -665,11 +739,11 @@ export default function Home() {
           </div>
         )}
 
-        {/* Progress Sidebar - only show when executing and expanded */}
+        {/* Progress Sidebar - only show when executing and expanded on desktop */}
         <AnimatePresence>
           {isExecuting && isExecutionExpanded && (
             <motion.div 
-              className="fixed top-[73px] right-0 w-80 h-[calc(100vh-73px)] bg-modal border-l border-border flex flex-col z-30 shadow-theme-lg"
+              className="hidden md:flex fixed top-[73px] right-0 w-80 h-[calc(100vh-73px)] bg-modal border-l border-border flex-col z-30 shadow-theme-lg"
               initial={{ x: 320, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 320, opacity: 0 }}
@@ -703,14 +777,40 @@ export default function Home() {
           )}
         </AnimatePresence>
 
-        {/* Mini Job Status - show when executing but not expanded */}
-        <MiniJobStatus
-          isVisible={isExecuting && !isExecutionExpanded}
-          executionId={executionId || ''}
-          onExpand={handleExpandExecution}
-          onStop={handleClose}
-          user={user}
-        />
+        {/* Mobile Progress Indicator - show on mobile when executing */}
+        <AnimatePresence>
+          {isExecuting && (
+            <motion.div 
+              className="md:hidden fixed bottom-6 left-6 z-50 bg-modal border border-border rounded-lg shadow-theme-lg max-w-[calc(100vw-3rem)]"
+              initial={{ y: 100, opacity: 0, scale: 0.8 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 100, opacity: 0, scale: 0.8 }}
+              transition={{ 
+                type: "spring",
+                stiffness: 300,
+                damping: 30,
+                duration: 0.3
+              }}
+            >
+              <MobileProgressIndicator 
+                executionId={executionId || ''}
+                onStop={handleClose}
+                user={user}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Mini Job Status - show when executing but not expanded on desktop only */}
+        <div className="hidden md:block">
+          <MiniJobStatus
+            isVisible={isExecuting && !isExecutionExpanded}
+            executionId={executionId || ''}
+            onExpand={handleExpandExecution}
+            onStop={handleClose}
+            user={user}
+          />
+        </div>
       </main>
 
       {/* Queue Manager Modal */}
@@ -743,7 +843,14 @@ export default function Home() {
 
 // Function to save mileage data to Firebase
 // Function to save processed note data to Firebase (with or without mileage)
-async function saveProcessedNoteDataToFirebase(noteData: any, user: User | null) {
+async function saveProcessedNoteDataToFirebase(noteData: {
+  executionId?: string;
+  dateOfService: string;
+  startTime: string;
+  endTime: string;
+  capturedAt: string;
+  endMileage?: string;
+}, user: User | null) {
   if (!user || !user.uid) {
     console.log('No authenticated user found, cannot save note data to Firebase');
     return;
@@ -803,6 +910,155 @@ interface ExecutionProgressSidebarProps {
   executionId: string;
   onStop: () => void;
   user: User | null;
+}
+
+// MobileProgressIndicator component to show progress on mobile at bottom-left
+interface MobileProgressIndicatorProps {
+  executionId: string;
+  onStop: () => void;
+  user: User | null;
+}
+
+function MobileProgressIndicator({ executionId, onStop, user }: MobileProgressIndicatorProps) {
+  const [currentMessage, setCurrentMessage] = useState<{
+    message: string;
+    type: 'progress' | 'success' | 'error';
+    timestamp: number;
+  }>({
+    message: 'Initializing automation...',
+    type: 'progress',
+    timestamp: Date.now()
+  });
+
+  useEffect(() => {
+    console.log('Setting up EventSource for mobile progress, executionId:', executionId);
+    const eventSource = new EventSource(`/api/automation/events?executionId=${executionId}`);
+    
+    eventSource.onopen = () => {
+      console.log('Mobile EventSource connection opened');
+    };
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const eventData = JSON.parse(event.data);
+        console.log('Mobile parsed event data:', eventData);
+
+        // Update current progress message based on events
+        if (eventData.type === 'progress') {
+          setCurrentMessage({
+            message: eventData.message || eventData.data || 'Processing...',
+            type: 'progress',
+            timestamp: Date.now()
+          });
+        } else if (eventData.type === 'miles') {
+          if (eventData.data && typeof eventData.data === 'object') {
+            console.log('Mobile saving miles data to Firebase:', eventData.data);
+            saveProcessedNoteDataToFirebase(eventData.data, user);
+            setCurrentMessage({
+              message: eventData.data.endMileage ? 
+                `Note processed: ${eventData.data.endMileage} miles` : 
+                'Note processed successfully',
+              type: 'success',
+              timestamp: Date.now()
+            });
+          }
+        } else if (eventData.type === 'noteProcessed') {
+          if (eventData.data && typeof eventData.data === 'object') {
+            console.log('Mobile saving noteprocessed data to Firebase:', eventData.data);
+            saveProcessedNoteDataToFirebase(eventData.data, user);
+            setCurrentMessage({
+              message: eventData.data.endMileage ? 
+                `Note processed: ${eventData.data.endMileage} miles` : 
+                'Note processed successfully',
+              type: 'success',
+              timestamp: Date.now()
+            });
+          }
+        } else if (eventData.type === 'success') {
+          setCurrentMessage({
+            message: eventData.message || eventData.data || 'Success',
+            type: 'success',
+            timestamp: Date.now()
+          });
+        } else if (eventData.type === 'error') {
+          setCurrentMessage({
+            message: eventData.message || eventData.data || 'Error occurred',
+            type: 'error',
+            timestamp: Date.now()
+          });
+        } else if (eventData.type === 'connected') {
+          console.log('Mobile connected to automation events');
+          setCurrentMessage({
+            message: 'Connected to automation',
+            type: 'success',
+            timestamp: Date.now()
+          });
+        }
+      } catch (e) {
+        console.error('Mobile error parsing event data:', e, 'Raw data:', event.data);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('Mobile EventSource failed:', error);
+      setCurrentMessage({
+        message: 'Connection error - retrying...',
+        type: 'error',
+        timestamp: Date.now()
+      });
+    };
+
+    return () => {
+      console.log('Closing mobile EventSource connection');
+      eventSource.close();
+    };
+  }, [executionId, user]);
+
+  return (
+    <div className="p-3 w-full max-w-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <div className="flex-shrink-0">
+            {currentMessage.type === 'success' ? (
+              <div className="w-4 h-4 text-green-500 flex items-center justify-center">
+                <AnimatedCheckmark size={16} strokeWidth={2} />
+              </div>
+            ) : currentMessage.type === 'progress' ? (
+              <div className="w-4 h-4 flex items-center justify-center">
+                <LottieLoading size={14} />
+              </div>
+            ) : currentMessage.type === 'error' ? (
+              <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center">
+                <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </div>
+            ) : (
+              <div className="w-4 h-4 rounded-full border-2 border-border" />
+            )}
+          </div>
+          
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm truncate ${
+              currentMessage.type === 'success' ? 'text-green-700 dark:text-green-400' : 
+              currentMessage.type === 'progress' ? 'text-primary-color' :
+              currentMessage.type === 'error' ? 'text-red-600 dark:text-red-400' : 
+              'text-gray-500 dark:text-gray-400'
+            }`}>
+              {currentMessage.message}
+            </p>
+          </div>
+        </div>
+        
+        <button
+          onClick={onStop}
+          className="flex-shrink-0 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+        >
+          Stop
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function ExecutionProgressSidebar({ executionId, onStop, user }: ExecutionProgressSidebarProps) {
@@ -942,7 +1198,7 @@ function ExecutionProgressSidebar({ executionId, onStop, user }: ExecutionProgre
       console.log('Closing EventSource connection');
       eventSource.close();
     };
-  }, [executionId]);
+  }, [executionId, user]);
 
   return (
     <>

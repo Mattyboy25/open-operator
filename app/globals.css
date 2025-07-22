@@ -67,6 +67,10 @@
   --stroke-width: 0.8;
 }
 
+.rounded-lg{
+  padding-bottom: 10px;
+}
+
 /* Mobile responsive styles */
 @layer utilities {
   .mobile-container {
@@ -93,10 +97,122 @@
     @apply p-2 sm:p-3 text-sm sm:text-base;
   }
   
+  .mobile-address-input {
+    @apply w-full min-w-0 max-w-full text-sm sm:text-base px-2 sm:px-3 py-2;
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+  
   .mobile-card {
     @apply p-3 sm:p-4 rounded-md;
   }
+  
+  .mobile-content-container {
+    @apply px-2 sm:px-4 pb-2 sm:pb-4 space-y-2 sm:space-y-4;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
 }
+
+.pt-6{
+  width:100px
+}
+/* Mobile-responsive border card utility */
+.mobile-border-card {
+  border: 1px solid var(--border);
+  border-radius: 0.375rem; /* rounded-md */
+  margin-bottom: 0.5rem; /* mb-2 */
+  margin-left: 0.5rem; /* mx-2 */
+  margin-right: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .mobile-border-card {
+    border-radius: 0.5rem; /* sm:rounded-lg */
+    margin-bottom: 1rem; /* sm:mb-4 */
+    margin-left: 0; /* sm:mx-0 */
+    margin-right: 0;
+  }
+}
+
+/* Mobile input width constraints */
+.mobile-safe-input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
+}
+
+/* Address input specific mobile styles */
+.address-input-mobile {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 0.875rem; /* 14px */
+  padding: 0.5rem;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 640px) {
+  .address-input-mobile {
+    font-size: 1rem; /* 16px */
+    padding: 0.75rem;
+  }
+}
+
+/* Prevent form overflow on mobile */
+.mobile-form-container {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+.mobile-form-container * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Mobile content container with responsive spacing */
+.mobile-content-spacing {
+  padding-left: 0.5rem; /* px-2 */
+  padding-right: 0.5rem;
+  padding-bottom: 0.5rem; /* pb-2 */
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.mobile-content-spacing > * + * {
+  margin-top: 0.5rem; /* space-y-2 */
+}
+
+@media (min-width: 640px) {
+  .mobile-content-spacing {
+    padding-left: 1rem; /* sm:px-4 */
+    padding-right: 1rem;
+    padding-bottom: 1rem; /* sm:pb-4 */
+  }
+  
+  .mobile-content-spacing > * + * {
+    margin-top: 1rem; /* sm:space-y-4 */
+  }
+}
+
+/* Global mobile form element constraints */
+@media (max-width: 639px) {
+  button, input, optgroup, select, textarea {
+    max-width: 150px;
+    box-sizing: border-box;
+  }
+}
+
 .dark {
   --background: #0a0703;
   --foreground: #ffffff;
