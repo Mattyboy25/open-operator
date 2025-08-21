@@ -940,6 +940,7 @@ export async function runPuppeteerScript(
       }
       const caseNotesLink = pageTabs.querySelector('a[href*="/dfcs/notes"]') as HTMLElement;
       if (caseNotesLink) {
+        
         caseNotesLink.click();
       } else {
         throw new Error('Case Notes link not found within pageTabs');
@@ -1096,6 +1097,7 @@ export async function runPuppeteerScript(
     if (mileageStartAddress && mileageStartAddress.trim() !== '') {
       
       const mileageTabSelector = 'a[href*="/dfcs/notes/trips"]';
+      await sleep(1500)
       await page.waitForSelector(mileageTabSelector, { visible: true, timeout: defaultTimeout });
       await page.click(mileageTabSelector);
       //console.log('Clicked on the "Mileage" tab');
