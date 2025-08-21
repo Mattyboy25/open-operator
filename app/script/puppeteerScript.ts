@@ -617,9 +617,9 @@ export async function runPuppeteerScript(
         } catch {
           console.error("Timeout waiting for mileage save confirmation toast message.");
         }
-        await sleep(50); // Reduced from 100ms
         
         if (i === endAddresses.length - 1) {
+                  await sleep(2300); // Reduced from 100ms
           const endMileageValue = await getLastEndMileageValue(page);
           if (endMileageValue !== null) {
             const captureTimestamp = new Date().toISOString();
