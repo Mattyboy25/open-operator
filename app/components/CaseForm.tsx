@@ -847,19 +847,22 @@ export default function CaseForm({ onSubmit, isLoading, readOnly = false, initia
     
     // Use functional update to get current credentials at the time of execution
     setFormData(currentFormData => {
-      // Preserve existing credentials when loading template
+      // Preserve existing credentials and date of service when loading template
       const currentCredentials = {
         companyCode: currentFormData.companyCode,
         username: currentFormData.username,
         password: currentFormData.password
       };
       
-      // Return completely new form data with template data and preserved credentials
+      // Preserve current date of service if it exists, otherwise use template's or default to empty
+      const preservedDateOfService = currentFormData.dateOfService || template.formData.dateOfService || '';
+      
+      // Return completely new form data with template data and preserved credentials/date
       return {
         ...template.formData,
         ...currentCredentials,
-        // Ensure required fields have default values
-        dateOfService: template.formData.dateOfService || ''
+        // Preserve the current date of service
+        dateOfService: preservedDateOfService
       };
     });
     
